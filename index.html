@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1d1b3a">
+<title>Spin to Decide</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style>
+:root{--bg:#1d1b3a;--card:#2a2750;--ink:#fff7e8;--mute:#aaa6d6;--hot:#ffb627}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:"Trebuchet MS",system-ui,sans-serif}
+body{padding:max(16px,env(safe-area-inset-top)) 16px max(24px,env(safe-area-inset-bottom));max-width:480px;margin:auto}
+h1{font-size:1.6rem;margin:4px 0 12px;letter-spacing:-.5px}
+.presets{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px}
+button{font:inherit;color:inherit;border:0;cursor:pointer}
+.presets button{background:var(--card);padding:8px 14px;border-radius:99px;white-space:nowrap}
+.presets button:focus-visible,.spin:focus-visible,.add button:focus-visible{outline:3px solid var(--hot);outline-offset:2px}
+.stage{position:relative;margin:14px auto 6px;width:min(100%,360px);aspect-ratio:1}
+canvas{width:100%;height:100%;display:block}
+.pin{position:absolute;left:50%;top:-6px;transform:translateX(-50%);width:0;height:0;border:14px solid transparent;border-top:28px solid var(--ink);filter:drop-shadow(0 2px 2px #0006)}
+.spin{position:absolute;inset:50% auto auto 50%;transform:translate(-50%,-50%);width:76px;height:76px;border-radius:50%;background:var(--ink);color:var(--bg);font-weight:900;box-shadow:0 0 0 6px var(--bg)}
+.spin:disabled{opacity:.6}
+.result{min-height:64px;text-align:center;font-size:1.9rem;font-weight:900;color:var(--hot);margin:10px 0;word-break:break-word}
+.result small{display:block;font-size:.85rem;color:var(--mute);font-weight:400}
+.add{display:flex;gap:8px}
+.add input{flex:1;min-width:0;padding:12px;border-radius:12px;border:2px solid var(--card);background:var(--card);color:var(--ink);font:inherit}
+.add input:focus{outline:none;border-color:var(--hot)}
+.add button{background:var(--hot);color:var(--bg);font-weight:900;padding:0 18px;border-radius:12px}
+ul{list-style:none;padding:0;margin:12px 0;display:flex;flex-wrap:wrap;gap:8px}
+li{display:flex;align-items:center;gap:6px;background:var(--card);padding:6px 6px 6px 12px;border-radius:99px;border-left:10px solid var(--c)}
+li button{background:#0003;width:24px;height:24px;border-radius:50%;line-height:1}
+label{display:flex;gap:8px;align-items:center;color:var(--mute);font-size:.95rem}
+.hint{color:var(--mute);font-size:.85rem}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<h1>Spin to decide</h1>
+<div class="presets" id="presets"></div>
+
+<div class="stage">
+  <canvas id="wheel" aria-label="Decision wheel"></canvas>
+  <div class="pin"></div>
+  <button class="spin" id="spin">SPIN</button>
+</div>
+<div class="result" id="result" role="status" aria-live="polite">Add options, then spin</div>
+
+<form class="add" id="form">
+  <input id="inp" maxlength="30" placeholder="Add an option" autocomplete="off" aria-label="New option">
+  <button type="submit">Add</button>
+</form>
+<ul id="list"></ul>
+<label><input type="checkbox" id="rm"> Remove the winner after each spin</label>
+<p class="hint">Needs at least 2 options. Your list is saved on this device.</p>
+
+<script>
+const COLORS=["#ffb627","#ff595e","#3ddc97","#4ea8de","#9b5de5","#f15bb5"];
+const PRESETS={
+  "What to eat":["Biryani","Pizza","Dosa","Burger","Noodles","Paneer wrap","Thali"],
+  "What to watch":["Comedy","Thriller","Sci-fi","Romance","Documentary","Anime"],
+  "Weekend plan":["Movie","Long drive","Board games","Cook together","Visit family","Rest at home"]
+};
+let opts=[],rot=0,spinning=false;
+try{opts=JSON.parse(localStorage.getItem("opts"))||[]}catch(e){}
+if(!opts.length)opts=[...PRESETS["What to eat"]];
+const $=id=>document.getElementById(id),cv=$("wheel"),ctx=cv.getContext("2d");
+const save=()=>{try{localStorage.setItem("opts",JSON.stringify(opts))}catch(e){}};
+
+function draw(){
+  const d=devicePixelRatio||1,s=cv.clientWidth;
+  cv.width=cv.height=s*d;ctx.setTransform(d,0,0,d,0,0);
+  const r=s/2,n=opts.length,a=2*Math.PI/Math.max(n,1);
+  ctx.clearRect(0,0,s,s);
+  ctx.save();ctx.translate(r,r);ctx.rotate(rot);
+  if(!n){ctx.fillStyle="#2a2750";ctx.beginPath();ctx.arc(0,0,r-4,0,7);ctx.fill()}
+  opts.forEach((o,i)=>{
+    ctx.beginPath();ctx.moveTo(0,0);ctx.arc(0,0,r-4,i*a,(i+1)*a);ctx.closePath();
+    ctx.fillStyle=COLORS[i%COLORS.length];ctx.fill();
+    ctx.strokeStyle="#1d1b3a";ctx.lineWidth=3;ctx.stroke();
+    ctx.save();ctx.rotate(i*a+a/2);ctx.textAlign="right";ctx.fillStyle="#1d1b3a";
+    ctx.font=`800 ${Math.max(12,Math.min(18,s/n*.5))}px "Trebuchet MS",sans-serif`;
+    ctx.fillText(o.length>14?o.slice(0,13)+"…":o,r-18,6);ctx.restore();
+  });
+  ctx.restore();
+}
+
+function renderList(){
+  const ul=$("list");ul.innerHTML="";
+  opts.forEach((o,i)=>{
+    const li=document.createElement("li");li.style.setProperty("--c",COLORS[i%COLORS.length]);
+    li.append(o);
+    const b=document.createElement("button");b.textContent="×";b.setAttribute("aria-label","Remove "+o);
+    b.onclick=()=>{if(spinning)return;opts.splice(i,1);update()};
+    li.append(b);ul.append(li);
+  });
+}
+function update(){save();renderList();draw()}
+
+$("form").onsubmit=e=>{
+  e.preventDefault();const v=$("inp").value.trim();
+  if(v&&!spinning&&opts.length<24){opts.push(v);$("inp").value="";update()}
+};
+const pr=$("presets");
+Object.keys(PRESETS).forEach(k=>{
+  const b=document.createElement("button");b.textContent=k;
+  b.onclick=()=>{if(spinning)return;opts=[...PRESETS[k]];$("result").textContent="Ready to spin";update()};
+  pr.append(b);
+});
+
+$("spin").onclick=()=>{
+  if(spinning)return;
+  if(opts.length<2){$("result").textContent="Add at least 2 options";return}
+  spinning=true;$("spin").disabled=true;$("result").textContent="…";
+  const start=rot,extra=(5+Math.random()*3)*2*Math.PI+Math.random()*2*Math.PI;
+  const dur=matchMedia("(prefers-reduced-motion:reduce)").matches?600:4200,t0=performance.now();
+  (function f(t){
+    const p=Math.min((t-t0)/dur,1),e=1-Math.pow(1-p,4);
+    rot=start+extra*e;draw();
+    if(p<1)return requestAnimationFrame(f);
+    finish();
+  })(t0);
+};
+function finish(){
+  const a=2*Math.PI/opts.length,TAU=2*Math.PI;
+  const ang=(((-Math.PI/2-rot)%TAU)+TAU)%TAU,i=Math.floor(ang/a),w=opts[i];
+  $("result").innerHTML=`${w.replace(/</g,"&lt;")}<small>Decided!</small>`;
+  if(navigator.vibrate)navigator.vibrate(120);
+  if($("rm").checked&&opts.length>2){opts.splice(i,1);save();renderList();draw()}
+  spinning=false;$("spin").disabled=false;
+}
+addEventListener("resize",draw);
+update();
+if("serviceWorker"in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
+</script>
+</body>
+</html>
